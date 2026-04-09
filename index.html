@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SkyWings Pro Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body {
+    margin:0;
+    font-family: 'Segoe UI';
+    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+    color:white;
+}
+
+.container {
+    width:90%;
+    margin:auto;
+}
+
+.card {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    padding:20px;
+    border-radius:15px;
+    margin-top:20px;
+}
+
+h1 { text-align:center; }
+
+input, select, button {
+    padding:10px;
+    border-radius:8px;
+    border:none;
+    margin:5px;
+}
+
+button {
+    background:#00c6ff;
+    color:white;
+    cursor:pointer;
+}
+
+.kpi {
+    display:flex;
+    justify-content:space-around;
+    text-align:center;
+}
+
+.kpi div {
+    background: rgba(255,255,255,0.1);
+    padding:15px;
+    border-radius:10px;
+}
+
+.table-box {
+    max-height:250px;
+    overflow:auto;
+    background:white;
+    color:black;
+    border-radius:10px;
+}
+
+table {
+    width:100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding:8px;
+    border-bottom:1px solid #ddd;
+}
+
+.login {
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+
+.login-box {
+    background: rgba(255,255,255,0.1);
+    padding:30px;
+    border-radius:15px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="login">
+    <div class="login-box">
+        <h2>Login</h2>
+        <input type="text" id="user" placeholder="Username"><br>
+        <input type="password" id="pass" placeholder="Password"><br>
+        <button onclick="login()">Login</button>
+    </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" style="display:none">
+<div class="container">
+
+<h1>✈️ SkyWings Pro Dashboard</h1>
+
+<div class="card">
+<input type="file" id="fileInput">
+<select id="chartType">
+<option value="bar">Bar</option>
+<option value="line">Line</option>
+<option value="pie">Pie</option>
+</select>
+
+<select id="seasonFilter">
+<option value="all">All Season</option>
+<option value="Peak">Peak</option>
+<option value="Off-Peak">Off-Peak</option>
+</select>
+
+<button onclick="downloadCSV()">Download Report</button>
+</div>
+
+<div class="card kpi">
+<div>Total Revenue ₹<br><b id="total">0</b></div>
+<div>Avg Booking ₹<br><b id="avg">0</b></div>
+<div>Total Records<br><b id="count">0</b></div>
+</div>
+
+<div class="card">
+<canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+<input type="text" id="search" placeholder="Search..." onkeyup="filterTable()">
+<div class="table-box">
+<table id="table"></table>
+</div>
+</div>
+
+</div>
+</div>
+
+<script>
+
+let dataGlobal=[];
+let chart;
+
+// LOGIN
+function login(){
+    let u=document.getElementById("user").value;
+    let p=document.getElementById("pass").value;
+
+    if(u==="admin" && p==="1234"){
+        document.getElementById("loginPage").style.display="none";
+        document.getElementById("dashboard").style.display="block";
+    } else {
+        alert("Invalid login");
+    }
+}
+
+// FILE UPLOAD
+document.getElementById("fileInput").addEventListener("change",function(e){
+    let file=e.target.files[0];
+    let reader=new FileReader();
+
+    reader.onload=function(evt){
+        let wb=XLSX.read(evt.target.result,{type:"binary"});
+        let sheet=wb.Sheets[wb.SheetNames[0]];
+        let json=XLSX.utils.sheet_to_json(sheet);
+
+        dataGlobal=json;
+        process();
+        table(json);
+    };
+
+    reader.readAsBinaryString(file);
+});
+
+// PROCESS DATA
+function process(){
+
+let season=document.getElementById("seasonFilter").value;
+let filtered=dataGlobal.filter(d=>{
+    if(season==="all") return true;
+    return d["Season"]===season;
+});
+
+let monthly={};
+let total=0;
+
+filtered.forEach(d=>{
+let m=new Date(d["Booking Date"]).toLocaleString('default',{month:'short'});
+let rev=Number(d["Revenue"]||d["Booking Value"]||0);
+
+total+=rev;
+monthly[m]=(monthly[m]||0)+rev;
+});
+
+let labels=Object.keys(monthly);
+let values=Object.values(monthly);
+
+draw(labels,values);
+
+document.getElementById("total").innerText=total.toFixed(0);
+document.getElementById("avg").innerText=(total/filtered.length||0).toFixed(0);
+document.getElementById("count").innerText=filtered.length;
+}
+
+// CHART
+function draw(labels,data){
+let type=document.getElementById("chartType").value;
+
+if(chart) chart.destroy();
+
+chart=new Chart(document.getElementById("chart"),{
+type:type,
+data:{
+labels:labels,
+datasets:[{label:"Revenue",data:data}]
+}
+});
+}
+
+// TABLE
+function table(data){
+let t=document.getElementById("table");
+t.innerHTML="";
+
+let headers=Object.keys(data[0]);
+
+t.innerHTML+="<tr>"+headers.map(h=>"<th>"+h+"</th>").join("")+"</tr>";
+
+data.forEach(r=>{
+t.innerHTML+="<tr>"+headers.map(h=>"<td>"+r[h]+"</td>").join("")+"</tr>";
+});
+}
+
+// SEARCH
+function filterTable(){
+let input=document.getElementById("search").value.toLowerCase();
+let rows=document.querySelectorAll("#table tr");
+
+rows.forEach((row,i)=>{
+if(i===0) return;
+row.style.display=row.innerText.toLowerCase().includes(input)?"":"none";
+});
+}
+
+// DOWNLOAD CSV
+function downloadCSV(){
+let csv="";
+
+dataGlobal.forEach(row=>{
+csv+=Object.values(row).join(",")+"\n";
+});
+
+let blob=new Blob([csv]);
+let a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="report.csv";
+a.click();
+}
+
+// EVENTS
+document.getElementById("chartType").addEventListener("change",process);
+document.getElementById("seasonFilter").addEventListener("change",process);
+
+</script>
+
+</body>
+</html>
